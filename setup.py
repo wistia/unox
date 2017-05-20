@@ -24,7 +24,7 @@ setup(
     long_description='',
 
     # The project's main homepage.
-    url='https://github.com/hnsl/unox',
+    url='https://github.com/wistia/unox',
 
     # Author details
     author='Hannes Landeholm ',
@@ -60,7 +60,7 @@ setup(
     ],
 
     # What does your project relate to?
-    keywords='unison watchdog macfsvents',
+    keywords='unison macfsvents',
 
     # You can just speciunify the packages manually here if your project is
     # simple. Or you can use find_packages().
@@ -71,7 +71,7 @@ setup(
     py_modules=["unox"],
 
     # we need to install pathtools since watchdog depends on it but did not define the dep
-    install_requires=['watchdog','pathtools'],
+    install_requires=['macfsevents'],
 
     # To provide executable scripts, use entry points in preference to the
     # "scripts" keyword. Entry points provide cross-platform support and allow

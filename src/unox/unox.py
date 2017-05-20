@@ -14,15 +14,14 @@
 # and is intended to be installed as unison-fsmonitor in the PATH in OS X. This is the
 # missing puzzle piece for repeat = watch support for Unison in in OS X.
 #
-# Dependencies: pip install watchdog
+# Dependencies: pip install macfsevents
 #
 # Licence: MPLv2 (https://www.mozilla.org/MPL/2.0/)
 
 import sys
 import os
 import traceback
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+import fsevents
 import signal
 
 # Import depending on python version
@@ -43,12 +42,12 @@ my_log_prefix = "[unox]"
 _in_debug = "--debug" in sys.argv
 _in_debug_plus = False
 
-# Global watchdog observer.
-observer = Observer()
+# Global fsevents observer
+observer = fsevents.Observer()
 observer.start()
 
 # Dict of monitored replicas.
-# Replica hash mapped to watchdog.observers.api.ObservedWatch objects.
+# Replica hash mapped to fsevents.Stream objects.
 replicas = {}
 
 # Dict of pending replicas that are beeing waited on.
@@ -176,29 +175,6 @@ def triggerReplica(replica, local_path_toks):
     _debug_triggers()
 
 
-class Handler(FileSystemEventHandler):
-    def __init__(self, fspath, replica):
-        self.replica = replica
-        self.fspath = fspath
-
-    def dispatch(self, event):
-        path = event.src_path
-        try:
-            if not path.startswith(self.fspath):
-                return warn("unexpected file event at path [" + path + "] for [" + self.fspath + "]")
-            local_path = path[len(self.fspath):]
-            local_path_toks = pathTokenize(local_path)
-            if _in_debug: _debug("replica:[" + self.replica + "] file event @[" + local_path + "] (" + path + ")")
-            triggerReplica(self.replica, local_path_toks)
-        except Exception as e:
-            # Because python is a horrible language it has a special behavior for non-main threads that
-            # fails to catch an exception. Instead of crashing the process, only the thread is destroyed.
-            # We fix this with this catch all exception handler.
-            sys.stderr.write(format_exception(e))
-            sys.stderr.flush()
-            os._exit(1)
-
-
 # Starts monitoring of a replica.
 def startReplicaMon(replica, fspath, path):
     global replicas, observer
@@ -206,16 +182,32 @@ def startReplicaMon(replica, fspath, path):
         # Ensure fspath has trailing slash.
         fspath = os.path.join(fspath, "")
         if _in_debug: _debug("start monitoring of replica [" + replica + "] [" + fspath + "]")
+        def replicaFileEventCallback(path, mask):
+            try:
+                if not path.startswith(fspath):
+                    return warn("unexpected file event at path [" + path + "] for [" + fspath + "]")
+                local_path = path[len(fspath):]
+                local_path_toks = pathTokenize(local_path)
+                if _in_debug: _debug("replica:[" + replica + "] file event @[" + local_path + "] (" + path + ")")
+                triggerReplica(replica, local_path_toks)
+            except Exception as e:
+                # Because python is a horrible language it has a special behavior for non-main threads that
+                # fails to catch an exception. Instead of crashing the process, only the thread is destroyed.
+                # We fix this with this catch all exception handler.
+                sys.stderr.write(format_exception(e))
+                sys.stderr.flush()
+                os._exit(1)
+
         try:
             # OS X has no interface for "file level" events. You would have to implement this manually in userspace,
             # and compare against a snapshot. This means there's no point in us doing it, better leave it to Unison.
             if _in_debug: _debug("replica:[" + replica + "] watching path [" + fspath + "]")
-            handler = Handler(fspath, replica)
-            watch = observer.schedule(handler, fspath, recursive=True)
+            stream = fsevents.Stream(replicaFileEventCallback, fspath)
+            observer.schedule(stream)
         except Exception as e:
             sendError(str(e))
         replicas[replica] = {
-            "watch": watch,
+            "stream": stream,
             "fspath": fspath
         }
     sendAck()
@@ -296,9 +288,9 @@ def main():
             if not replica in replicas:
                 warn("unknown replica: " + replica)
                 continue
-            watch = replicas[replica]["watch"]
-            if watch is not None:
-                observer.unschedule(watch)
+            stream = replicas[replica]["stream"]
+            if stream is not None:
+                observer.unschedule(stream)
             del replicas[replica]
             if replica in triggered_reps:
                 del triggered_reps[replica]
@@ -312,6 +304,6 @@ if __name__ == '__main__':
         main()
     finally:
         for replica in replicas:
-            observer.unschedule(replicas[replica]["watch"])
+            observer.unschedule(replicas[replica]["stream"])
         observer.stop()
         observer.join()
