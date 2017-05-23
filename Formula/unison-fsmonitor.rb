@@ -8,8 +8,6 @@ class UnisonFsmonitor < Formula
   depends_on :python => :recommended if MacOS.version <= :snow_leopard
   depends_on :python3 => :optional
 
-  depends_on "MacFSEvents" => [:python, "fsevents"]
-
   resource "macfsevents" do 
     url "https://pypi.python.org/packages/f4/fb/59f72719e339f6209997414c6d0b7e1e1f96900dede3ec1cc24008471cc2/MacFSEvents-0.7.tar.gz"
     sha256 "95d3cddaf8a42435bfbd50087785ee9e3ebb8325242cfd06a88ea21f85bcb56f"
